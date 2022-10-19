@@ -183,14 +183,21 @@ lf_restructure = function(x, MA=5, method="GP1997", control=list(), ...) {
   if(is.null(control$lowfreq)) control$lowfreq = FALSE
   if(is.null(control$trim))    control$trim = FALSE
   if(is.null(control$before))  control$before = FALSE
+  if(is.null(control$n))       control$n = 30
+  control$n = .check_n(control$n)
+
   return(control)
 }
 
+#' @export
 plot.elefan = function(x, zlim=NULL, center=NULL, ...) {
   x = x$rsa
   if(is.null(zlim)) zlim=c(0, max(x$Rn, na.rm=TRUE))
   if(is.null(center)) center = mean(x$Rn, na.rm=TRUE)
   col = colorful::divergencePalette(zlim=zlim, center=center)
-  image.plot(x$Linf, x$k, x$Rn, col=col, zlim=zlim)
+  image.plot(x$Linf, x$k, x$Rn, col=col, zlim=zlim,
+             xlab = "Asymptotic length (Linf, cm)",
+             ylab = "Curvature parameter (k, year-1)", main="Response Surface Analysis")
+  return(invisible(NULL))
 }
 
