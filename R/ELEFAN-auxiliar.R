@@ -67,29 +67,12 @@ flag_out = function(x, flag.method="first") {
 }
 
 
-.relative_age = function(date, birth, lifespan) {
-  dbirth = yday(parse_date_time(birth, order=c("dm","md")))
-  # t_anchor = dbirth/365
-  start = min(date) - years(lifespan)
-  yday(start) = min(dbirth)
-  end = max(date)
-  years = seq(from=year(start), to=year(end))
-  nd = rep(rep(2000, length=length(years)), each=length(birth))
-  # bs is the assumed birthdate of all cohorts (t_anchor)
-  bd = date(sprintf("%s-01-01", nd))
-  yday(bd) = dbirth
-  year(bd) = rep(years, each=length(birth))
-  age = outer(date, bd, difftime, units="days")/365.25
-  Lt = data.frame(date=date, cohort=as.numeric(col(age)), age=as.numeric(age))
-  Lt = Lt[Lt$age<=lifespan & Lt$age>0, ]
-  # Lt = as.data.table(Lt)
-  return(Lt)
-}
 
-.find_t0 = function(k, Linf, Lt, lifespan, bins, obs, by=NULL, range=FALSE) {
+.find_t0 = function(k, Linf, Lt, lifespan, bins, marks, obs, by=NULL, range=FALSE) {
 
   if(is.null(by)) {
-    rr = .find_t0(k=k, Linf=Linf, Lt, lifespan, bins, obs, by=0.05, range=TRUE)
+    rr = .find_t0(k=k, Linf=Linf, Lt=Lt, lifespan=lifespan, bins=bins,
+                  marks=marks, obs=obs, by=0.05, range=TRUE)
     by = 0.001
   } else {
     rr = c(-lifespan, 0)
@@ -100,7 +83,6 @@ flag_out = function(x, flag.method="first") {
 
   for(i in seq_along(t0s)) {
     sim = cbind(Lt, length=.VB(Lt$age, Linf=Linf, k=k, t0=t0s[i])) #data.table
-    # sim[, length := .VB(age, Linf=Linf, k=k, t0=t0s[i])]
     esp[i] = ESP(obs, sim, bins, marks)
   }
   t0 = t0s[which.max(esp)]
@@ -110,6 +92,7 @@ flag_out = function(x, flag.method="first") {
     return(range(t0s[esp>0.8]))
   }
 
+  attr(t0, "ESP") = max(esp)
   return(t0)
 }
 
