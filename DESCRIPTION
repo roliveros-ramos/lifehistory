@@ -11,6 +11,9 @@ Encoding: UTF-8
 Depends:
     R (>= 3.0.0)
 Imports:
+  calibrar,
+  fields,
+  foreach,
   lubridate
 LazyData: true
 RoxygenNote: 7.2.1
