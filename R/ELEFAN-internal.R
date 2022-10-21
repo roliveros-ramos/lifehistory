@@ -183,9 +183,11 @@ lf_restructure = function(x, MA=5, method="GP1997", control=list(), ...) {
   if(is.null(control$lowfreq)) control$lowfreq = FALSE
   if(is.null(control$trim))    control$trim = FALSE
   if(is.null(control$before))  control$before = FALSE
-  if(is.null(control$n))       control$n = 30
+  if(is.null(control$ncores))  control$ncores = detectCores(logical = FALSE)
+  if(is.na(control$ncores))    control$ncores = 1
+  if(is.null(control$n))       control$n = 10
   control$n = .check_n(control$n)
-
+  if(is.null(control$init_cluster)) control$init_cluster=TRUE
   return(control)
 }
 

@@ -6,7 +6,7 @@ ELEFAN1 = function(x, ...) {
 
 #' @export
 ELEFAN1.len_freq = function(x, Linf, k, lifespan, birth="01-apr", method="rsa",
-                            parallel=FALSE, control=list()) {
+                            parallel=TRUE, control=list()) {
 
   marks = x$marks
   bins  = x$bins
@@ -51,7 +51,7 @@ ELEFAN1.len_freq = function(x, Linf, k, lifespan, birth="01-apr", method="rsa",
   if(method=="rsa") {
 
     out = rsa(Linf=Linf, k=k, lifespan=lifespan, bins=bins, marks=marks,
-              ASP=peaks$ASP, obs=obs, Lt=Lt, n=n, parallel=parallel)
+              ASP=peaks$ASP, obs=obs, Lt=Lt, n=n, parallel=parallel, control=control)
 
   } else {
 
@@ -79,30 +79,29 @@ ASP = function(x, return.peaks=FALSE) {
 
 # objective function
 
-ESP = function(obs, sim, bins, marks, flag.method="first", ...) {
+ESP = function(obs, sim, flag.method="first", ...) {
 
-  # transform length to length-class
-  sim$length = marks[cut(sim$length, breaks=bins, right=FALSE, labels=FALSE)]
-  # remove length outside sampling
-  sim = sim[!is.na(sim$length), ]
   if(nrow(sim)==0) return(0)
   # combine sim and obs
   sim = merge(sim, obs, sort=FALSE)
-
-  if(!is.null(flag.method)) {
-    ind = sim$cohort_peaks==0
-    neg = sum(sim$Fs[ind], na.rm=TRUE)
-    pos = sum(flag_out(sim[!ind, ], flag.method=flag.method))
-    esp = pos + neg
-  } else {
-    esp = sum(sim$Fs, na.rm=TRUE)
-  }
+  esp = .ESP(x=sim, flag.method=flag.method)
 
   return(esp)
 }
 
+.ESP = function(x, flag.method) {
+  if(!is.null(flag.method)) {
+    ind = x$cohort_peaks==0
+    neg = sum(x$Fs[ind], na.rm=TRUE)
+    pos = sum(flag_out(x[!ind, ], flag.method=flag.method))
+    esp = pos + neg
+  } else {
+    esp = sum(x$Fs, na.rm=TRUE)
+  }
+  return(esp)
+}
 
-rsa = function(Linf, k, lifespan, bins, marks, ASP, obs, Lt, n, parallel=FALSE) {
+rsa = function(Linf, k, lifespan, bins, marks, ASP, obs, Lt, n, parallel=FALSE, control) {
 
   # brute-force estimation squeleton
   if(length(Linf)==1) n[1] = 1
@@ -112,42 +111,42 @@ rsa = function(Linf, k, lifespan, bins, marks, ASP, obs, Lt, n, parallel=FALSE) 
   par$t0 = NA
   par$esp = NA
 
+  pb = txtProgressBar(min=0, max=nrow(par), style=3, title = "RSA")
+  opts = list(progress=function(n) setTxtProgressBar(pb, n))
 
+  # setting para
   if(parallel) {
 
-    .export = c("Lt", "lifespan", "bins", "marks", "obs")
-
-    res = foreach(i=seq_len(nrow(par)), .combine=rbind, .verbose=FALSE, .inorder=FALSE) %dopar% {
-
-      k    = par$k[i]
-      Linf = par$Linf[i]
-      t0   = .find_t0(k=k, Linf=Linf, Lt=Lt, lifespan=lifespan, bins=bins, marks=marks, obs=obs)
-      # sim = cbind(Lt, length=.VB(Lt$age, Linf=Linf, k=k, t0=t0))
-      # iesp = ESP(obs=obs, sim=sim, bins=bins, marks=marks)
-      c(i, t0, attr(t0, "ESP"))
-
+    if(isTRUE(control$init_cluster)) {
+      cl = makeCluster(control$ncores, type="SOCK")
+      registerDoSNOW(cl)
     }
-
-    res = res[order(res[,1]), ]
-
-    par$t0  = res[, 2]
-    par$esp = res[, 3]
 
   } else {
 
-    pb = txtProgressBar(min=0, max=nrow(par), style=3, title = "RSA")
+    registerDoSEQ()
 
-    for(i in seq_len(nrow(par))) {
-      k    = par$k[i]
-      Linf = par$Linf[i]
-      t0   = .find_t0(k=k, Linf=Linf, Lt=Lt, lifespan=lifespan, bins=bins, marks=marks, obs=obs)
-      sim = cbind(Lt, length=.VB(Lt$age, Linf=Linf, k=k, t0=t0))
-      par$esp[i] = ESP(obs=obs, sim=sim, bins=bins, marks=marks)
-      par$t0[i] = t0
-      setTxtProgressBar(pb, i)
-    }
+  }
 
-  } # end parallel
+  .export = c("Lt", "lifespan", "bins", "marks", "obs")
+
+  res = foreach(i=seq_len(nrow(par)), .combine=rbind, .options.snow=opts,
+                .verbose=FALSE, .inorder=FALSE) %dopar% {
+
+                  k    = par$k[i]
+                  Linf = par$Linf[i]
+                  t0   = .find_t0_dt(k=k, Linf=Linf, Lt=Lt, lifespan=lifespan, bins=bins, marks=marks, obs=obs)
+                  if(!parallel) setTxtProgressBar(pb, i)
+                  c(i, t0, attr(t0, "ESP"))
+
+                }
+
+  if(parallel & isTRUE(control$init_cluster)) stopCluster(cl)
+
+  res = res[order(res[,1]), ]
+
+  par$t0  = res[, 2]
+  par$esp = res[, 3]
 
   opt = which.max(par$esp)
   opar = list(k=par$k[opt], Linf=par$Linf[opt])
