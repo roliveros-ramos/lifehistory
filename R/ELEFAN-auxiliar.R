@@ -57,14 +57,14 @@ flag_out = function(x, flag.method="first") {
   return(out)
 }
 
-.flag2 = function(x, flag.method) {
-  out = switch(flag.method,
-               "first" = x[which.min(cohort), .(Fs)],
-               "last"  = x[which.max(cohort), .(Fs)],
-               "max"   = x[, max(Fs, na.rm=TRUE)],
-               "mean"  = x[, mean(Fs, na.rm=TRUE)])
-  return(out)
-}
+# .flag2 = function(x, flag.method) {
+#   out = switch(flag.method,
+#                "first" = x[which.min(cohort), .(Fs)],
+#                "last"  = x[which.max(cohort), .(Fs)],
+#                "max"   = x[, max(Fs, na.rm=TRUE)],
+#                "mean"  = x[, mean(Fs, na.rm=TRUE)])
+#   return(out)
+# }
 
 
 
@@ -83,6 +83,10 @@ flag_out = function(x, flag.method="first") {
 
   for(i in seq_along(t0s)) {
     sim = cbind(Lt, length=.VB(Lt$age, Linf=Linf, k=k, t0=t0s[i])) #data.table
+    # transform length to length-class
+    sim$length = marks[cut(sim$length, breaks=bins, right=FALSE, labels=FALSE)]
+    # remove length outside sampling
+    sim = sim[!is.na(sim$length), ]
     esp[i] = ESP(obs, sim, bins, marks)
   }
   t0 = t0s[which.max(esp)]
@@ -96,3 +100,187 @@ flag_out = function(x, flag.method="first") {
   return(t0)
 }
 
+
+.find_t0_dt = function(k, Linf, Lt, lifespan, bins, marks, obs, by=NULL, range=FALSE) {
+
+  if(is.null(by)) {
+    rr = .find_t0_dt(k=k, Linf=Linf, Lt=Lt, lifespan=lifespan, bins=bins,
+                  marks=marks, obs=obs, by=1/100, range=TRUE)
+    by = 1/365
+  } else {
+    rr = c(-1, 0)
+  }
+
+  # if(!is.null(attr(rr, "ESP"))) return(rr)
+
+  t0s = seq(from=rr[1], to=rr[2], by=by)
+  par = expand.grid(Linf=Linf, k=k, t0=t0s)
+  par$ID = seq_len(nrow(par))
+  sim = data.frame(ID = par$ID,
+                   t0 = par$t0,
+                   date=rep(Lt$date, nrow(par)),
+                   cohort=rep(Lt$cohort, nrow(par)),
+                   age=rep(Lt$age, nrow(par)))
+  simL = .VB(sim$age, Linf, k, sim$t0)
+  sim$length = marks[cut(simL, breaks=bins, labels=FALSE)]
+  sim = sim[!is.na(sim$length), ]
+
+  if(nrow(sim)==0) {
+
+    little = sum(simL < bins[1], na.rm=TRUE)
+    big    = sum(simL > tail(bins, 1), na.rm=TRUE)
+
+    t0 = ifelse(little <= big, -1, 0)
+    attr(t0, "ESP") = -99
+
+  } else {
+    sim = merge(sim, obs, sort=FALSE)
+
+    xesp = sapply(split(sim, f=sim$ID, drop = FALSE), FUN=.ESP, flag.method="first")
+
+    esp = rep(NA_real_, length(t0s))
+    esp[as.numeric(names(xesp))] = xesp
+
+    t0 = t0s[which.max(esp)]
+    attr(t0, "ESP") = max(esp, na.rm=TRUE)
+  }
+
+  if(isTRUE(range)) {
+    xrr = pmin(pmax(t0 + 0.5*c(-1,1)/12, -1), 0)
+    return(xrr)
+  }
+
+  return(t0)
+
+}
+
+
+.find_t0_dt2 = function(k, Linf, Lt, lifespan, bins, marks, obs) {
+
+  t0s = seq(from=-1, to=0, length.out=365)
+  par = expand.grid(Linf=Linf, k=k, t0=t0s)
+  par$ID = seq_len(nrow(par))
+  sim = data.frame(ID = par$ID,
+                   t0 = par$t0,
+                   date=rep(Lt$date, nrow(par)),
+                   cohort=rep(Lt$cohort, nrow(par)),
+                   age=rep(Lt$age, nrow(par)))
+  sim$length = marks[cut(.VB(sim$age, Linf, k, sim$t0), breaks=bins, labels=FALSE)]
+  sim = sim[!is.na(sim$length), ]
+  sim = merge(sim, obs, sort=FALSE)
+
+  xesp = sapply(split(sim, f=sim$ID, drop = FALSE), FUN=.ESP, flag.method="first")
+
+  esp = rep(NA_real_, length(t0s))
+  esp[as.numeric(names(xesp))] = xesp
+
+  t0 = t0s[which.max(esp)]
+  attr(t0, "ESP") = max(esp, na.rm=TRUE)
+
+  return(t0)
+}
+
+# new optimized version ---------------------------------------------------
+
+
+ESP2 = function(obs, sim, bins, marks, flag.method="first", ...) {
+
+  # transform length to length-class
+  sim$length = marks[cut(sim$length, breaks=bins, right=FALSE, labels=FALSE)]
+  # remove length outside sampling
+  sim = sim[!is.na(sim$length), ]
+  # combine sim and obs
+  sim = merge(sim, obs, sort=FALSE)
+
+  if(!is.null(flag.method)) {
+    ind = sim$cohort_peaks==0
+    neg = sum(sim$Fs[ind], na.rm=TRUE)
+    pos = sum(flag_out(sim[!ind, ], flag.method=flag.method))
+    esp = pos + neg
+  } else {
+    esp = sum(sim$Fs, na.rm=TRUE)
+  }
+
+  return(esp)
+}
+
+
+# if(!is.null(flag.method)) {
+#   ind = sim$cohort_peaks==0
+#   neg = sum(sim$Fs[ind], na.rm=TRUE)
+#   pos = sum(flag_out(sim[!ind, ], flag.method=flag.method))
+#   esp = pos + neg
+# } else {
+#   esp = sum(sim$Fs, na.rm=TRUE)
+# }
+
+
+# replace marks with integers in obs (no marks needed)
+# sim[, length := cut(length, breaks=bins, right=FALSE, labels=FALSE)]
+
+ESP2 = function(obs, sim, bins, marks, flag.method="first", ...) {
+
+  # transform length to length-class
+  sim[, length := cut(length, breaks=bins, right=FALSE, labels=FALSE)]
+  # remove length outside sampling
+  sim = sim[!is.na(length)]
+  sim = obs[sim, on=c("date", "length")]
+
+  if(!is.null(flag.method)) {
+    # ind = sim$cohort_peaks==0
+    neg = sim[cohort_peaks==0, sum(Fs, na.rm=TRUE)]
+    pos = sim[cohort_peaks!=0, .flag2(.SD, flag.method=flag.method), by=cohort_peaks]
+    esp = pos[, sum(Fs)] + neg
+  } else {
+    esp = sim[, sum(Fs, na.rm=TRUE)]
+  }
+
+  return(esp)
+}
+
+.flag_dt = function(x, flag.method="first") {
+
+  if(nrow(x)==0) return(0)
+  if(!is.null(flag.method)) {
+    print(class(x))
+
+    neg = x[cohort_peaks==0, sum(Fs, na.rm=TRUE)]
+    pos = x[cohort_peaks!=0, .flag2(.SD, flag.method=flag.method), by=cohort_peaks]
+    esp = pos[, sum(Fs)] + neg
+  } else {
+    esp = x[, sum(Fs, na.rm=TRUE)]
+  }
+
+  return(esp)
+
+}
+
+.xflag = function(x, flag.method="first") {
+
+  if(nrow(x)==0) return(0)
+
+  if(!is.null(flag.method)) {
+    ind = sim$cohort_peaks==0
+    neg = sum(sim$Fs[ind], na.rm=TRUE)
+    pos = sum(flag_out(sim[!ind, ], flag.method=flag.method))
+    esp = pos + neg
+  } else {
+    esp = sum(sim$Fs, na.rm=TRUE)
+  }
+
+  return(esp)
+
+}
+
+
+
+
+
+.flag2 = function(x, flag.method) {
+  out = switch(flag.method,
+               "first" = as.numeric(x[which.min(cohort), .(Fs)]),
+               "last"  = as.numeric(x[which.max(cohort), .(Fs)]),
+               "max"   = x[, max(Fs, na.rm=TRUE)],
+               "mean"  = x[, mean(Fs, na.rm=TRUE)])
+  return(out)
+}
