@@ -6,3 +6,7 @@ NULL
 NULL
 #' @importFrom foreach foreach %dopar%
 NULL
+#' @importFrom parallel detectCores makeCluster
+NULL
+#' @importFrom doSNOW registerDoSNOW
+NULL

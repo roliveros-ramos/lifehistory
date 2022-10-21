@@ -12,8 +12,10 @@ Depends:
     R (>= 3.0.0)
 Imports:
   calibrar,
+  doSNOW,
   fields,
   foreach,
-  lubridate
+  lubridate,
+  parallel
 LazyData: true
 RoxygenNote: 7.2.1
