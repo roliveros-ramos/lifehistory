@@ -2,6 +2,7 @@
 
 S3method(ELEFAN1,len_freq)
 S3method(plot,elefan)
+S3method(print,elefan)
 export(ELEFAN1)
 export(lf_create)
 importFrom(calibrar,calibrate)
