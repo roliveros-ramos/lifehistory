@@ -134,6 +134,7 @@ lf_restructure = function(x, MA=5, method="GP1997", control=list(), ...) {
   if(length(n)==1) n = c(n, n)
   if(any(n<0)) stop("All 'n' must be positive integers.")
   n = as.integer(n)
+  n = n + 1 - n%%2 # always odd
   return(n)
 }
 
@@ -167,7 +168,7 @@ lf_restructure = function(x, MA=5, method="GP1997", control=list(), ...) {
   if(length(k)>2) {
     stop("A range (min, max) for 'k' search must be provided.")
   }
-  if(any(k<=0)) stop("Only positive values for k are valid.")
+  if(any(k<0)) stop("Only positive values for k are valid.")
   if(k[1]>k[2]) stop("Increasing values for k are expected.")
   if(k[1]==k[2]) stop("You must provide at least two different 'k' values.")
 
@@ -188,18 +189,52 @@ lf_restructure = function(x, MA=5, method="GP1997", control=list(), ...) {
   if(is.null(control$n))       control$n = 10
   control$n = .check_n(control$n)
   if(is.null(control$init_cluster)) control$init_cluster=TRUE
+  if(is.null(control$fixed.birth)) control$fixed.birth = FALSE
   return(control)
 }
 
 #' @export
-plot.elefan = function(x, zlim=NULL, center=NULL, ...) {
+plot.elefan = function(x, what="Rn", zlim=NULL, p=1.42, add=FALSE, ...) {
+
   x = x$rsa
-  if(is.null(zlim)) zlim=c(0, max(x$Rn, na.rm=TRUE))
-  if(is.null(center)) center = mean(x$Rn, na.rm=TRUE)
-  col = colorful::divergencePalette(zlim=zlim, center=center)
-  image.plot(x$Linf, x$k, x$Rn, col=col, zlim=zlim,
+  y = x[[what]]
+
+  if(isTRUE(add)) {
+    image(x$Linf, x$k, y, add=TRUE, breaks=0:1, col="white")
+    image(x$Linf, x$k, y, add=TRUE)
+    return(invisible(NULL))
+  }
+
+  thr = 0.1
+  zz = if(what=="Rn") c(0,1) else NULL
+  if(is.null(zlim)) zlim=range(c(y, zz))
+  # if(is.null(center)) center = 1.5*max(x$Rn, na.rm=TRUE)
+  # col = colorful::divergencePalette(zlim=zlim, center=center, p=p)
+  # col = colorful::directionalPalette(zlim=zlim, col="firebrick3", p=p)
+  if(what=="Rn") col = elefanPalette(n=256, p=p)
+  if(what=="t0") col = col = colorful::divergencePalette(zlim=zlim, center=0, p=p, symmetric = TRUE)
+  image.plot(x$Linf, x$k, y, col=col, zlim=zlim,
              xlab = "Asymptotic length (Linf, cm)",
-             ylab = "Curvature parameter (k, year-1)", main="Response Surface Analysis")
+             ylab = "Curvature parameter (k, year-1)",
+             main = sprintf("Response Surface Analysis (%s)", what))
   return(invisible(NULL))
 }
+
+#' @export
+print.elefan = function(x) {
+  cat("Overall best growth parameters:\n")
+  print(unlist(x$par))
+  cat("\nBest growth parameters by cohort:\n")
+  print(x$bycohort)
+}
+
+
+elefan.col = c("white", "cornsilk", "cornsilk",
+               "khaki1", "orange", "darkorange",
+               "red", "red3", "firebrick4",
+               "violetred4")
+
+elefanPalette = function(n, p) colorRampPalette(elefan.col, bias=p)(n)
+
+
 
