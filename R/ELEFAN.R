@@ -194,6 +194,9 @@ rsa = function(Linf, k, lifespan, bins, marks, births, ASP, obs, Lt, n, parallel
 
   bcoh = .best_by_cohort(bycohort=bycohort, t0=opar$t0, births=births, Rn=0.1*10^(bc_esp/ASP))
   bcoh$ASP = NULL
+  nmax = max(bcoh$n, na.rm=TRUE)
+  bcoh = bcoh[bcoh$n>=nmax/2, ]
+  rownames(bcoh) = NULL
 
   rsa = list(Linf = Linfs,
              k    = ks,
@@ -203,7 +206,7 @@ rsa = function(Linf, k, lifespan, bins, marks, births, ASP, obs, Lt, n, parallel
              par  = par,
              bycohort = bycohort)
 
-  out = list(par=opar, Rn=max(Rn, na.rm=TRUE), ASP=ASP, rsa=rsa, phi=phi[opt],
+  out = list(par=opar, lifespan=lifespan, Rn=max(Rn, na.rm=TRUE), ASP=ASP, rsa=rsa, phi=phi[opt],
              bycohort=bcoh)
 
   return(out)

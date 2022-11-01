@@ -226,6 +226,7 @@ print.elefan = function(x) {
   print(unlist(x$par))
   cat("\nBest growth parameters by cohort:\n")
   print(x$bycohort)
+  cat(sprintf("\nAssumed lifespan: %d years.\n", x$lifespan))
 }
 
 
