@@ -4,6 +4,10 @@
 
 .relative_age = function(date, birth, lifespan, asp) {
   dbirth = yday(parse_date_time(birth, order=c("dm","md")))
+  if(any(is.na(dbirth))) {
+    bad = paste(birth[is.na(dbirth)], collapse=", ")
+    stop(sprintf("Incorrect birth specification: %s.", bad))
+  }
   # t_anchor = dbirth/365
   start = min(date) - years(lifespan)
   yday(start) = min(dbirth)
@@ -139,18 +143,17 @@ flag_out = function(x, flag.method="first") {
 
   }
 
-  # if(!is.null(attr(rr, "ESP"))) return(rr)
-
   t0s = seq(from=rr[1], to=rr[2], by=by)
   par = expand.grid(Linf=Linf, k=k, t0=t0s)
 
   IDs = seq_len(nrow(par))
   coh = seq(from=min(Lt$cohort), to=max(Lt$cohort))
-  bycohort = matrix(NA_real_, nrow=length(IDs), ncol=length(coh))
+  bycohort  = matrix(NA_real_, nrow=length(IDs), ncol=length(coh))
+  bycohortM = matrix(NA_real_, nrow=length(IDs), ncol=length(coh))
 
   par$ID = IDs
-  sim = data.frame(ID = par$ID,
-                   t0 = par$t0,
+  sim = data.frame(ID = rep(par$ID, each=nrow(Lt)),
+                   t0 = rep(par$t0, each=nrow(Lt)),
                    date=rep(Lt$date, nrow(par)),
                    cohort=rep(Lt$cohort, nrow(par)),
                    age=rep(Lt$age, nrow(par)))
@@ -175,34 +178,40 @@ flag_out = function(x, flag.method="first") {
 
     sim = merge(sim, obs, sort=FALSE)
 
+    ## function start, f=sim$ID
     xesp = sapply(split(sim, f=sim$ID, drop = FALSE), FUN=.ESP, flag.method=flag.method)
-
     esp = rep(NA_real_, length(t0s))
     esp[as.numeric(names(xesp))] = xesp
+    # EOF
 
     t0 = t0s[which.max(esp)]
     attr(t0, "ESP") = max(esp, na.rm=TRUE)
 
     if(!isTRUE(range)) {
 
+      # another function
       cx = tapply(sim$Fs, INDEX=sim[, c("ID", "cohort")], FUN=sum)
       xrow = match(rownames(cx), IDs)
       xcol = match(colnames(cx), coh)
       bycohort[xrow, xcol] = cx
       bycohort[is.na(bycohort)] = null_value
-      bycohort = as.data.frame(bycohort)
+      # EOF
+
+      cx = tapply(sim$maxFs, INDEX=sim[, c("ID", "cohort")], FUN=sum)
+      xrow = match(rownames(cx), IDs)
+      xcol = match(colnames(cx), coh)
+      bycohortM[xrow, xcol] = cx
+      bycohortM[is.na(bycohortM)] = 0
+
+      bycohort = as.data.frame(bycohort/bycohortM)
+      print(max(bycohort))
       colnames(bycohort) = sprintf("cohort_%d", coh)
       bycohort = cbind(par, bycohort)
 
-      # here, filter IDs within a range of t0 (global)
-      # bc_esp = apply(bycohort, 2, max)
-      # bc_t0s = t0s[apply(bycohort, 2, which.max)]
-
-      # attr(t0, "bc_ESP") = bc_esp
-      # attr(t0, "bc_t0") = bc_t0s
-      # attr(t0, "range") = rr
-
-      out = list(t0=t0, bycohort=bycohort, esp=esp)
+      # t0 : the value of global t0, with ESP as attribute
+      # esp: global ESP for each parameter
+      # bycohort: a data.frame with bycohort ESP/ASP
+      out = list(t0=t0, esp=esp, bycohort=bycohort)
 
     }
 
@@ -438,23 +447,71 @@ ESP2 = function(obs, sim, bins, marks, flag.method="first", ...) {
   return(out)
 }
 
-.best_by_cohort = function(bycohort, t0, births, Rn, p=0.5) {
+.best_by_cohort = function(bycohort, par, births, Rn, p=0.5) {
   if(length(Rn)!=nrow(bycohort)) stop("global and by-cohort ESP dimension do not match.")
   if(p<0 | p>1) stop("Weighting factor 'p' must be between 0 and 1.")
   Rn = as.numeric(Rn)
-  t1 = t0 + c(-1, 1)/12 # one month of variability for recruitment peak
+  phi = phi(k=par$k, Linf=par$Linf)
+  # t1 = t0 + c(-1, 1)/12 # one month of variability for recruitment peak
   # bcoh = bycohort[bycohort$t0>=t1[1] & bycohort$t0<=t1[2], ]
   bcoh = bycohort
-  xasp = matrix(births$ASP, nrow=nrow(bcoh), ncol=nrow(births), byrow=TRUE)
-  bc_esp = 0.1*10^(as.matrix(bcoh[, -c(1:4)])/xasp)
-  bc_esp = p*bc_esp + (1-p)*Rn
-  bcoh = bcoh[apply(bc_esp, 2, which.max), ]
+  pphi = (1 - abs(bcoh$phi/phi - 1))
+  bc_esp = as.matrix(bcoh[, -c(1:4)])
+
+  p1 = 0.1*10^(bc_esp) # bycohort ASP for each par (matrix)
+  p2 = Rn              # global ASP for each par (vector)
+  p3 = pphi^5          # phi 'prior' for each par (vector)
+  post = p1*p2*p3      # 'posterior'
+
+  bcoh = bcoh[apply(post, 2, which.max), ] # TODO: something more efficient than which.max
   cohs = gsub(colnames(bcoh)[-c(1:4)], pattern="cohort_", replacement="")
-  bcoh = cbind(cohort=as.numeric(cohs), bcoh[, 1:4], ESP=diag(as.matrix(bcoh[, -c(1:4)])))
-  rownames(bcoh) = NULL
+  # bcoh = cbind(cohort=as.numeric(cohs), bcoh[, 1:4], ESP=diag(as.matrix(bcoh[, -c(1:4)])))
+  bcoh = cbind(cohort=as.numeric(cohs), bcoh[, 1:4])
   bcoh = merge(bcoh, births)
   bcoh$cohort = bcoh$bd
-  bcoh$bd = NULL
+  nmax = max(bcoh$n, na.rm=TRUE)
+  bcoh = bcoh[bcoh$n >= nmax/2, ]
+  bcoh$bd  = NULL
   bcoh$ESP = NULL
+  bcoh$ASP = NULL
+  rownames(bcoh) = NULL
   return(bcoh)
 }
+
+.merge_rsa = function(out) {
+
+  bycohort = do.call(rbind, lapply(out, FUN = "[[", i="bycohort"))
+  ind = !duplicated(bycohort)
+  bycohort = bycohort[ind, ]
+  bp_Rn = do.call(c, lapply(out, FUN = "[[", i="bp_Rn"))[ind]
+  global = do.call(rbind, lapply(out, FUN = "[[", i="global"))
+
+  Linfs = sort(unique(do.call(c, lapply(out, FUN = "[[", i="Linf"))))
+  ks = sort(unique(do.call(c, lapply(out, FUN = "[[", i="k"))))
+  par = expand.grid(Linf=Linfs, k=ks)
+  par$ind = seq_len(nrow(par))
+
+  par = merge(par, global, all.x=TRUE, sort=FALSE)
+  par = par[!duplicated(par), ]
+  par = par[order(par$ind), ]
+  test = (unique(diff(par$ind)) == 1) & (nrow(par) == nrow(par))
+  par$ind = NULL
+  par$phi[!is.finite(par$phi)] = NA
+
+  Rn = suppressWarnings(exp(interpolate(x=par$Linf, y=par$k, z=log(par$Rn), xout=Linfs, yout=ks,
+                   control=list(duplicate="mean"))$z))
+
+  rsa = list(Linf     = Linfs,
+             k        = ks,
+             t0       = matrix(par$t0, nrow=length(Linfs), ncol=length(ks)),
+             Rn       = Rn,
+             Rnr      = matrix(par$Rn, nrow=length(Linfs), ncol=length(ks)),
+             phi      = matrix(par$phi, nrow=length(Linfs), ncol=length(ks)),
+             bp_Rn    = bp_Rn, # more detail than Rn, more t0s.
+             bycohort = bycohort, # ASP by cohort for each parameter
+             global   = par)
+
+  return(rsa)
+
+}
+
