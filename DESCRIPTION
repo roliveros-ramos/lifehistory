@@ -1,12 +1,12 @@
 Package: lifehistory
 Type: Package
 Title: Estimation of life history parameters
-Version: 0.1.0
+Version: 0.1.0.9000
 Author: Ricardo Oliveros-Ramos
 Maintainer: Ricardo Oliveros-Ramos <ricardo.oliveros@gmail.com>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Description: This package provide many functions for the estimation of
+    life history parameters for fishes.
+License: TBD
 Encoding: UTF-8
 Depends:
     R (>= 3.0.0)
@@ -18,4 +18,4 @@ Imports:
   lubridate,
   parallel
 LazyData: true
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.2
